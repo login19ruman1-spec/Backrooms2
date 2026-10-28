@@ -145,7 +145,7 @@ final class RoomManager {
                     Material.APPLE,
                     Material.BREAD,
                     Material.CARROT,
-                    Material.COOKED_POTATO
+                    Material.BAKED_POTATO
             };
 
             case POOL -> new Material[]{
