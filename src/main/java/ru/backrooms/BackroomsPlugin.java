@@ -1384,7 +1384,8 @@ public final class BackroomsPlugin extends JavaPlugin
             return;
         }
 
-        List<Player> players = Bukkit.getOnlinePlayers()
+        // ИСПРАВЛЕНО: тип List<? extends Player>
+        List<? extends Player> players = Bukkit.getOnlinePlayers()
                 .stream()
                 .filter(player ->
                         !player.hasMetadata("NPC")
@@ -1582,7 +1583,7 @@ public final class BackroomsPlugin extends JavaPlugin
                 Player nearest = location.getWorld()
                         .getPlayers().stream()
                         .filter(p -> !p.hasMetadata("NPC"))
-                        .min(Comparator.comparingDouble(
+                        .min(java.util.Comparator.comparingDouble(
                                 p -> p.getLocation()
                                         .distanceSquared(location)))
                         .orElse(null);
