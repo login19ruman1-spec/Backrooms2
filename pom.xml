@@ -7,8 +7,7 @@
 
     <groupId>ru.backrooms</groupId>
     <artifactId>shifting-backrooms</artifactId>
-    <version>0.1.0</version>
-    <packaging>jar</packaging>
+    <version>0.4.0</version>
 
     <properties>
         <maven.compiler.release>21</maven.compiler.release>
@@ -20,11 +19,6 @@
             <id>papermc</id>
             <url>https://repo.papermc.io/repository/maven-public/</url>
         </repository>
-
-        <repository>
-            <id>citizens</id>
-            <url>https://maven.citizensnpcs.co/repo/</url>
-        </repository>
     </repositories>
 
     <dependencies>
@@ -33,20 +27,6 @@
             <artifactId>paper-api</artifactId>
             <version>1.21.4-R0.1-SNAPSHOT</version>
             <scope>provided</scope>
-        </dependency>
-
-        <dependency>
-            <groupId>net.citizensnpcs</groupId>
-            <artifactId>citizens-main</artifactId>
-            <version>2.0.37-SNAPSHOT</version>
-            <scope>provided</scope>
-
-            <exclusions>
-                <exclusion>
-                    <groupId>*</groupId>
-                    <artifactId>*</artifactId>
-                </exclusion>
-            </exclusions>
         </dependency>
     </dependencies>
 
@@ -62,19 +42,8 @@
                 <configuration>
                     <release>21</release>
                     <encoding>UTF-8</encoding>
-
-                    <includes>
-                        <include>ru/backrooms/BackroomsPlugin.java</include>
-                    </includes>
-
-                    <excludes>
-                        <exclude>ru/backrooms/EchoManager.java</exclude>
-                        <exclude>ru/backrooms/Miniature.java</exclude>
-                        <exclude>ru/backrooms/RoomManager.java</exclude>
-                    </excludes>
                 </configuration>
             </plugin>
         </plugins>
     </build>
-
 </project>
