@@ -2228,7 +2228,7 @@ public final class BackroomsPlugin extends JavaPlugin
         });
     }
 
-    private void finishSnapshot(
+       private void finishSnapshot(
             CommandSender sender, Snapshot building) {
 
         Bukkit.getScheduler().runTaskAsynchronously(this, () -> {
@@ -2237,8 +2237,1156 @@ public final class BackroomsPlugin extends JavaPlugin
 
             try {
                 try (DataOutputStream out =
-                     new DataOutputStream(
-                             new BufferedOutputStream(
-                                     new FileOutputStream(
-                                            
+                             new DataOutputStream(
+                                     new BufferedOutputStream(
+                                             new FileOutputStream(
+                                                     temporary)))) {
+
+                    out.writeInt(0x42523301);
+                    out.writeInt(building.scale);
+
+                    for (int i = 0;
+                         i < building.heights.length; i++) {
+                        out.writeShort(building.heights[i]);
+                        out.writeByte(building.colors[i]);
+                    }
+                }
+
+                java.nio.file.Files.move(
+                        temporary.toPath(),
+                        snapshotFile().toPath(),
+                        java.nio.file.StandardCopyOption
+                                .REPLACE_EXISTING);
+
+                if (isEnabled()) {
+                    Bukkit.getScheduler().runTask(this, () -> {
+                        snapshot = building;
+                        capturing = false;
+
+                        sender.sendMessage(
+                                "§aСнимок сохранён: "
+                                        + building.width
+                                        + " × "
+                                        + building.depth
+                                        + ". Вход: /br level world");
+                    });
+                }
+
+            } catch (IOException ex) {
+                getLogger().log(
+                        Level.SEVERE,
+                        "Не удалось сохранить миниатюру", ex);
+
+                if (isEnabled()) {
+                    Bukkit.getScheduler().runTask(this, () -> {
+                        capturing = false;
+                        sender.sendMessage(
+                                "§cСохранить миниатюру не удалось."
+                                        + " Подробности в консоли.");
+                    });
+                }
+            }
+        });
+    }
+
+    /*
+     * Приблизительная палитра поверхности.
+     * Это не точное преобразование каждого блока исходного мира.
+     */
+    private static byte colorFor(Material material) {
+        String name = material.name();
+
+        if (name.contains("MAGENTA")) return 15;
+        if (name.contains("PURPLE")) return 14;
+        if (name.contains("PINK")) return 13;
+        if (name.contains("RED")
+                && !name.contains("REDSTONE_ORE")) return 12;
+        if (name.contains("ORANGE")
+                || name.contains("LAVA")) return 11;
+        if (name.contains("YELLOW")
+                || name.contains("GOLD")
+                || name.contains("SAND")) return 10;
+        if (name.contains("CYAN")
+                || name.contains("PRISMARINE")) return 9;
+        if (name.contains("LIGHT_BLUE")
+                || name.contains("ICE")) return 8;
+        if (name.contains("BLUE")
+                || name.contains("WATER")) return 7;
+        if (name.contains("LIME")) return 6;
+        if (name.contains("GREEN")
+                || name.contains("LEAVES")
+                || name.contains("GRASS")
+                || name.contains("MOSS")) return 5;
+        if (name.contains("BROWN")
+                || name.contains("DIRT")
+                || name.contains("MUD")
+                || name.contains("LOG")
+                || name.contains("WOOD")
+                || name.contains("PLANKS")) return 4;
+        if (name.contains("BLACK")
+                || name.contains("OBSIDIAN")
+                || name.contains("COAL")) return 3;
+        if (name.contains("LIGHT_GRAY")
+                || name.contains("DIORITE")) return 1;
+        if (name.contains("WHITE")
+                || name.contains("SNOW")
+                || name.contains("QUARTZ")
+                || name.contains("CALCITE")) return 0;
+
+        return 2;
+    }
+
+    private static long hash(int x, int z, long salt) {
+        long value = salt
+                ^ ((long) x * 341873128712L)
+                ^ ((long) z * 132897987541L);
+
+        value = (value ^ (value >>> 30))
+                * 0xbf58476d1ce4e5b9L;
+        value = (value ^ (value >>> 27))
+                * 0x94d049bb133111ebL;
+
+        return value ^ (value >>> 31);
+    }
+
+    private static final class Gateway {
+        final int x;
+        final int y;
+        final int z;
+        final int target;
+
+        Gateway(int x, int y, int z, int target) {
+            this.x = x;
+            this.y = y;
+            this.z = z;
+            this.target = target;
+        }
+    }
+
+    private static final class RoomRect {
+        final int x1;
+        final int z1;
+        final int x2;
+        final int z2;
+
+        RoomRect(int x1, int z1, int x2, int z2) {
+            this.x1 = x1;
+            this.z1 = z1;
+            this.x2 = x2;
+            this.z2 = z2;
+        }
+
+        int centerX() {
+            return (x1 + x2) / 2;
+        }
+
+        int centerZ() {
+            return (z1 + z2) / 2;
+        }
+    }
+
+    /*
+     * Все операции ниже записывают только текущий ChunkData.
+     * Границы помещений вычисляются в мировых координатах:
+     * комната не обрезается по границе чанка.
+     */
+    private static final class BackroomsGenerator
+            extends ChunkGenerator {
+
+        private final int level;
+        private final long layoutSeed;
+        private final Snapshot miniature;
+
+        BackroomsGenerator(
+                int level, long seed, Snapshot miniature) {
+            this.level = level;
+            this.layoutSeed = seed;
+            this.miniature = miniature;
+        }
+
+        @Override
+        public boolean shouldGenerateNoise() {
+            return false;
+        }
+
+        @Override
+        public boolean shouldGenerateSurface() {
+            return false;
+        }
+
+        @Override
+        public boolean shouldGenerateBedrock() {
+            return false;
+        }
+
+        @Override
+        public boolean shouldGenerateCaves() {
+            return false;
+        }
+
+        @Override
+        public boolean shouldGenerateDecorations() {
+            return false;
+        }
+
+        @Override
+        public boolean shouldGenerateMobs() {
+            return false;
+        }
+
+        @Override
+        public boolean shouldGenerateStructures() {
+            return false;
+        }
+
+        @Override
+        public void generateNoise(
+                WorldInfo worldInfo,
+                Random ignored,
+                int chunkX,
+                int chunkZ,
+                ChunkData data) {
+
+            int minX = chunkX * 16;
+            int minZ = chunkZ * 16;
+
+            data.setRegion(
+                    0, FLOOR - 2, 0,
+                    16, FLOOR, 16,
+                    Material.STONE);
+
+            data.setRegion(
+                    0, FLOOR, 0,
+                    16, FLOOR + 1, 16,
+                    FLOORS[level]);
+
+            if (level == MINI) {
+                buildMiniature(data, minX, minZ);
+                return;
+            }
+
+            if (level == HOMES) {
+                buildResidential(data, minX, minZ);
+                return;
+            }
+
+            if (level == EXIT) {
+                buildExit(data, minX, minZ);
+                return;
+            }
+
+            int cellX = Math.floorDiv(minX, CELL);
+            int cellZ = Math.floorDiv(minZ, CELL);
+
+            if (level == PARKING) {
+                buildParking(
+                        data, minX, minZ, cellX, cellZ);
+            } else {
+                buildCell(
+                        data, minX, minZ, cellX, cellZ);
+            }
+
+            Gateway gate = regularGate(cellX, cellZ);
+
+            if (gate != null) {
+                drawGate(data, minX, minZ, gate);
+            }
+        }
+
+        private void box(
+                ChunkData data,
+                int chunkMinX,
+                int chunkMinZ,
+                int x1, int y1, int z1,
+                int x2, int y2, int z2,
+                Material material) {
+
+            int a = Math.max(x1, chunkMinX);
+            int b = Math.max(z1, chunkMinZ);
+            int c = Math.min(x2, chunkMinX + 15);
+            int d = Math.min(z2, chunkMinZ + 15);
+
+            int bottom = Math.max(y1, data.getMinHeight());
+            int top = Math.min(y2, data.getMaxHeight() - 1);
+
+            if (a > c || b > d || bottom > top) {
+                return;
+            }
+
+            data.setRegion(
+                    a - chunkMinX,
+                    bottom,
+                    b - chunkMinZ,
+                    c - chunkMinX + 1,
+                    top + 1,
+                    d - chunkMinZ + 1,
+                    material);
+        }
+
+        private void blockData(
+                ChunkData data,
+                int chunkMinX,
+                int chunkMinZ,
+                int x, int y, int z,
+                BlockData blockData) {
+
+            if (x < chunkMinX
+                    || x >= chunkMinX + 16
+                    || z < chunkMinZ
+                    || z >= chunkMinZ + 16
+                    || y < data.getMinHeight()
+                    || y >= data.getMaxHeight()) {
+                return;
+            }
+
+            data.setBlock(
+                    x - chunkMinX,
+                    y,
+                    z - chunkMinZ,
+                    blockData);
+        }
+
+        private void shell(
+                ChunkData data,
+                int cx, int cz,
+                RoomRect room,
+                int height,
+                Material wall,
+                Material floor) {
+
+            box(data, cx, cz,
+                    room.x1, FLOOR, room.z1,
+                    room.x2, FLOOR, room.z2,
+                    floor);
+
+            box(data, cx, cz,
+                    room.x1, FLOOR + 1, room.z1,
+                    room.x2, FLOOR + height - 1, room.z2,
+                    Material.AIR);
+
+            box(data, cx, cz,
+                    room.x1, FLOOR + height, room.z1,
+                    room.x2, FLOOR + height, room.z2,
+                    Material.SMOOTH_STONE);
+
+            box(data, cx, cz,
+                    room.x1, FLOOR + 1, room.z1,
+                    room.x1, FLOOR + height - 1, room.z2,
+                    wall);
+
+            box(data, cx, cz,
+                    room.x2, FLOOR + 1, room.z1,
+                    room.x2, FLOOR + height - 1, room.z2,
+                    wall);
+
+            box(data, cx, cz,
+                    room.x1, FLOOR + 1, room.z1,
+                    room.x2, FLOOR + height - 1, room.z1,
+                    wall);
+
+            box(data, cx, cz,
+                    room.x1, FLOOR + 1, room.z2,
+                    room.x2, FLOOR + height - 1, room.z2,
+                    wall);
+
+            for (int x = room.x1 + 3;
+                 x < room.x2; x += 8) {
+                for (int z = room.z1 + 3;
+                     z < room.z2; z += 8) {
+
+                    box(data, cx, cz,
+                            x, FLOOR + height, z,
+                            x + 1, FLOOR + height, z,
+                            Material.SEA_LANTERN);
+                }
+            }
+        }
+
+        private void corridor(
+                ChunkData data,
+                int cx, int cz,
+                int x1, int z1,
+                int x2, int z2,
+                int halfWidth) {
+
+            corridorPart(
+                    data, cx, cz,
+                    Math.min(x1, x2) - halfWidth,
+                    z1 - halfWidth,
+                    Math.max(x1, x2) + halfWidth,
+                    z1 + halfWidth);
+
+            corridorPart(
+                    data, cx, cz,
+                    x2 - halfWidth,
+                    Math.min(z1, z2) - halfWidth,
+                    x2 + halfWidth,
+                    Math.max(z1, z2) + halfWidth);
+        }
+
+        private void corridorPart(
+                ChunkData data,
+                int cx, int cz,
+                int x1, int z1, int x2, int z2) {
+
+            box(data, cx, cz,
+                    x1, FLOOR, z1,
+                    x2, FLOOR, z2,
+                    FLOORS[level]);
+
+            box(data, cx, cz,
+                    x1, FLOOR + 1, z1,
+                    x2, FLOOR + 4, z2,
+                    Material.AIR);
+
+            box(data, cx, cz,
+                    x1, FLOOR + 5, z1,
+                    x2, FLOOR + 5, z2,
+                    Material.SMOOTH_STONE);
+
+            int lightX = Math.floorDiv(x1 + 7, 8) * 8;
+            int lightZ = Math.floorDiv(z1 + 7, 8) * 8;
+
+            for (int x = lightX; x <= x2; x += 8) {
+                for (int z = lightZ; z <= z2; z += 8) {
+                    box(data, cx, cz,
+                            x, FLOOR + 5, z,
+                            x, FLOOR + 5, z,
+                            Material.SEA_LANTERN);
+                }
+            }
+        }
+
+        private void split(
+                RoomRect room,
+                Random random,
+                int depth,
+                List<RoomRect> result) {
+
+            int width = room.x2 - room.x1;
+            int length = room.z2 - room.z1;
+
+            int minimum = switch (level) {
+                case 2, 10, 15 -> 24;
+                case 1, 3, 9, 20, 21 -> 12;
+                case 8, 12, 13, 18 -> 20;
+                default -> 16;
+            };
+
+            boolean splitX = width >= length;
+
+            if (depth >= 5
+                    || (width < minimum * 2
+                    && length < minimum * 2)
+                    || (depth >= 2
+                    && random.nextInt(5) == 0)) {
+                result.add(room);
+                return;
+            }
+
+            if (splitX && width >= minimum * 2) {
+                int middle = room.x1 + minimum
+                        + random.nextInt(
+                        width - minimum * 2 + 1);
+
+                split(new RoomRect(
+                                room.x1, room.z1,
+                                middle, room.z2),
+                        random, depth + 1, result);
+
+                split(new RoomRect(
+                                middle, room.z1,
+                                room.x2, room.z2),
+                        random, depth + 1, result);
+
+            } else if (length >= minimum * 2) {
+                int middle = room.z1 + minimum
+                        + random.nextInt(
+                        length - minimum * 2 + 1);
+
+                split(new RoomRect(
+                                room.x1, room.z1,
+                                room.x2, middle),
+                        random, depth + 1, result);
+
+                split(new RoomRect(
+                                room.x1, middle,
+                                room.x2, room.z2),
+                        random, depth + 1, result);
+            } else {
+                result.add(room);
+            }
+        }
+
+        private void buildCell(
+                ChunkData data,
+                int cx, int cz,
+                int cellX, int cellZ) {
+
+            int ox = cellX * CELL;
+            int oz = cellZ * CELL;
+
+            Random random = new Random(hash(
+                    cellX, cellZ,
+                    layoutSeed + level * 100003L));
+
+            List<RoomRect> rooms = new ArrayList<>();
+
+            split(
+                    new RoomRect(
+                            ox + 11, oz + 19,
+                            ox + CELL - 3, oz + CELL - 3),
+                    random, 0, rooms);
+
+            for (RoomRect room : rooms) {
+                int height = switch (level) {
+                    case 2, 8, 12, 13, 15, 18 -> 9;
+                    case 1, 3, 9, 20, 21 -> 5;
+                    default -> 6;
+                };
+
+                shell(data, cx, cz, room, height,
+                        WALLS[level], FLOORS[level]);
+
+                decorateRoom(data, cx, cz, room, random);
+            }
+
+            // Соединение всех помещений в единый маршрут.
+            int previousX = ox + 7;
+            int previousZ = oz + 7;
+
+            for (RoomRect room : rooms) {
+                corridor(
+                        data, cx, cz,
+                        previousX, previousZ,
+                        room.centerX(), room.centerZ(),
+                        level == 1 || level == 3 ? 0 : 1);
+
+                previousX = room.centerX();
+                previousZ = room.centerZ();
+            }
+
+            // Сквозные маршруты между соседними областями.
+            corridor(
+                    data, cx, cz,
+                    ox, oz + 5,
+                    ox + CELL - 1, oz + 5, 2);
+
+            corridor(
+                    data, cx, cz,
+                    ox + 5, oz,
+                    ox + 5, oz + CELL - 1, 2);
+
+            Gateway gate = regularGate(cellX, cellZ);
+
+            if (gate != null) {
+                corridor(
+                        data, cx, cz,
+                        ox + 5, oz + 5,
+                        gate.x, gate.z - 1, 1);
+            }
+        }
+
+        private void decorateRoom(
+                ChunkData data,
+                int cx, int cz,
+                RoomRect room,
+                Random random) {
+
+            switch (level) {
+                case 0, 6, 7 -> buildOffice(
+                        data, cx, cz, room);
+
+                case 2, 10 -> buildWarehouse(
+                        data, cx, cz, room);
+
+                case 8 -> buildLibrary(
+                        data, cx, cz, room);
+
+                case 12, 13 -> {
+                    for (int x = room.x1 + 3;
+                         x + 3 < room.x2; x += 9) {
+                        for (int z = room.z1 + 3;
+                             z + 3 < room.z2; z += 9) {
+
+                            box(data, cx, cz,
+                                    x, FLOOR, z,
+                                    x + 3, FLOOR, z + 3,
+                                    Material.WATER);
+
+                            box(data, cx, cz,
+                                    x, FLOOR - 1, z,
+                                    x + 3, FLOOR - 1, z + 3,
+                                    Material.PRISMARINE);
+                        }
+                    }
+                }
+
+                case 3, 15, 21 -> {
+                    for (int z = room.z1 + 2;
+                         z < room.z2; z += 7) {
+
+                        box(data, cx, cz,
+                                room.x1 + 2, FLOOR + 1, z,
+                                room.x1 + 3, FLOOR + 3, z + 1,
+                                Material.CUT_COPPER);
+
+                        box(data, cx, cz,
+                                room.x2 - 3, FLOOR + 1, z,
+                                room.x2 - 2, FLOOR + 2, z + 1,
+                                Material.POLISHED_BASALT);
+                    }
+
+                    box(data, cx, cz,
+                            room.x1 + 1, FLOOR + 4, room.z1 + 1,
+                            room.x2 - 1, FLOOR + 4, room.z1 + 1,
+                            Material.CUT_COPPER);
+                }
+
+                case 4 -> {
+                    for (int x = room.x1 + 3;
+                         x < room.x2 - 2; x += 7) {
+
+                        box(data, cx, cz,
+                                x, FLOOR + 1, room.z1 + 3,
+                                x, FLOOR + 3, room.z1 + 3,
+                                Material.OAK_LOG);
+
+                        box(data, cx, cz,
+                                x - 1, FLOOR + 4, room.z1 + 2,
+                                x + 1, FLOOR + 4, room.z1 + 4,
+                                Material.MOSS_BLOCK);
+                    }
+                }
+
+                case 11 -> {
+                    for (int x = room.x1 + 3;
+                         x < room.x2; x += 8) {
+
+                        int height = 2 + random.nextInt(3);
+
+                        box(data, cx, cz,
+                                x, FLOOR + 1, room.z1 + 3,
+                                x + 1, FLOOR + height,
+                                room.z1 + 4,
+                                Material.PACKED_ICE);
+                    }
+                }
+
+                case 14, 16, 17, 18 -> {
+                    Material pillar = level == 14
+                            ? Material.BONE_BLOCK
+                            : WALLS[level];
+
+                    for (int x = room.x1 + 4;
+                         x < room.x2 - 3; x += 9) {
+                        for (int z = room.z1 + 4;
+                             z < room.z2 - 3; z += 9) {
+
+                            box(data, cx, cz,
+                                    x, FLOOR + 1, z,
+                                    x, FLOOR + 4, z,
+                                    pillar);
+                        }
+                    }
+                }
+
+                default -> {
+                    for (int z = room.z1 + 3;
+                         z < room.z2 - 2; z += 8) {
+
+                        box(data, cx, cz,
+                                room.x1 + 2, FLOOR + 1, z,
+                                room.x1 + 4, FLOOR + 2, z,
+                                WALLS[level]);
+                    }
+                }
+            }
+
+            // Контейнеры не перезаполняются после первого открытия.
+            box(data, cx, cz,
+                    room.x2 - 2, FLOOR + 1, room.z2 - 2,
+                    room.x2 - 2, FLOOR + 1, room.z2 - 2,
+                    Material.BARREL);
+        }
+
+        private void buildOffice(
+                ChunkData data,
+                int cx, int cz,
+                RoomRect room) {
+
+            for (int x = room.x1 + 3;
+                 x + 2 < room.x2; x += 7) {
+                for (int z = room.z1 + 3;
+                     z + 3 < room.z2; z += 7) {
+
+                    box(data, cx, cz,
+                            x, FLOOR + 1, z,
+                            x + 2, FLOOR + 1, z,
+                            Material.SMOOTH_STONE_SLAB);
+
+                    box(data, cx, cz,
+                            x + 1, FLOOR + 2, z,
+                            x + 1, FLOOR + 2, z,
+                            Material.BLACK_CONCRETE);
+
+                    box(data, cx, cz,
+                            x + 1, FLOOR + 1, z + 2,
+                            x + 1, FLOOR + 1, z + 2,
+                            Material.OAK_STAIRS);
+                }
+            }
+
+            box(data, cx, cz,
+                    room.x1 + 1, FLOOR + 1, room.z2 - 3,
+                    room.x1 + 1, FLOOR + 3, room.z2 - 1,
+                    Material.BOOKSHELF);
+        }
+
+        private void buildWarehouse(
+                ChunkData data,
+                int cx, int cz,
+                RoomRect room) {
+
+            for (int x = room.x1 + 3;
+                 x + 2 < room.x2; x += 8) {
+                for (int z = room.z1 + 3;
+                     z + 3 < room.z2; z += 7) {
+
+                    for (int y : new int[]{1, 4}) {
+                        box(data, cx, cz,
+                                x, FLOOR + y, z,
+                                x + 2, FLOOR + y, z + 2,
+                                Material.SPRUCE_PLANKS);
+
+                        box(data, cx, cz,
+                                x + 1, FLOOR + y + 1, z + 1,
+                                x + 1, FLOOR + y + 1, z + 1,
+                                Material.BARREL);
+                    }
+
+                    box(data, cx, cz,
+                            x, FLOOR + 1, z,
+                            x, FLOOR + 6, z,
+                            Material.IRON_BARS);
+
+                    box(data, cx, cz,
+                            x + 2, FLOOR + 1, z + 2,
+                            x + 2, FLOOR + 6, z + 2,
+                            Material.IRON_BARS);
+                }
+            }
+        }
+
+        private void buildLibrary(
+                ChunkData data,
+                int cx, int cz,
+                RoomRect room) {
+
+            for (int x = room.x1 + 3;
+                 x < room.x2 - 2; x += 6) {
+                for (int z = room.z1 + 3;
+                     z + 3 < room.z2; z += 7) {
+
+                    box(data, cx, cz,
+                            x, FLOOR + 1, z,
+                            x, FLOOR + 4, z + 3,
+                            Material.BOOKSHELF);
+                }
+            }
+
+            box(data, cx, cz,
+                    room.x1 + 2, FLOOR + 1, room.z1 + 2,
+                    room.x1 + 4, FLOOR + 1, room.z1 + 2,
+                    Material.OAK_SLAB);
+        }
+
+        private void buildParking(
+                ChunkData data,
+                int cx, int cz,
+                int cellX, int cellZ) {
+
+            int ox = cellX * CELL;
+            int oz = cellZ * CELL;
+
+            box(data, cx, cz,
+                    ox, FLOOR + 7, oz,
+                    ox + CELL - 1, FLOOR + 7,
+                    oz + CELL - 1,
+                    Material.SMOOTH_STONE);
+
+            for (int x = ox + 20;
+                 x < ox + CELL; x += 24) {
+                for (int z = oz + 20;
+                     z < oz + CELL; z += 24) {
+
+                    box(data, cx, cz,
+                            x, FLOOR + 1, z,
+                            x + 1, FLOOR + 6, z + 1,
+                            Material.STONE_BRICKS);
+
+                    box(data, cx, cz,
+                            x - 2, FLOOR + 7, z - 2,
+                            x + 3, FLOOR + 7, z - 2,
+                            Material.SEA_LANTERN);
+                }
+            }
+
+            for (int x = ox + 30;
+                 x < ox + CELL - 5; x += 12) {
+                for (int z = oz + 30;
+                     z < oz + CELL - 6; z += 18) {
+
+                    box(data, cx, cz,
+                            x - 2, FLOOR, z - 1,
+                            x - 2, FLOOR, z + 5,
+                            Material.WHITE_CONCRETE);
+
+                    Material car = COLORS[
+                            (int) Math.floorMod(
+                                    hash(x, z, layoutSeed),
+                                    (long) COLORS.length)];
+
+                    box(data, cx, cz,
+                            x, FLOOR + 1, z,
+                            x + 2, FLOOR + 1, z + 4,
+                            car);
+
+                    box(data, cx, cz,
+                            x, FLOOR + 2, z + 1,
+                            x + 2, FLOOR + 2, z + 3,
+                            Material.BLACK_STAINED_GLASS);
+                }
+            }
+        }
+
+        private Gateway regularGate(int cellX, int cellZ) {
+            Random route = new Random(hash(
+                    cellX, cellZ,
+                    layoutSeed + level * 65537L + 991L));
+
+            if ((cellX != 0 || cellZ != 0)
+                    && route.nextInt(3) != 0) {
+                return null;
+            }
+
+            int target;
+
+            if (cellX == 0 && cellZ == 0) {
+                target = level == 0 ? HOMES : 0;
+            } else {
+                target = route.nextInt(LEVEL_COUNT - 1);
+
+                if (target >= level) {
+                    target++;
+                }
+
+                // MINI доступен после подготовки снимка.
+                if (target == MINI && miniature == null) {
+                    target = HOMES;
+                }
+            }
+
+            return new Gateway(
+                    cellX * CELL + 24,
+                    FLOOR + 1,
+                    cellZ * CELL + 12,
+                    target);
+        }
+
+        private List<Gateway> houseGates() {
+            List<Gateway> result = new ArrayList<>();
+
+            int[] targets = {0, 2, 8, PARKING, 12, EXIT};
+            int index = 0;
+
+            for (int row = 0; row < 2; row++) {
+                for (int column = 0; column < 3; column++) {
+                    int x = 16 + column * 56;
+                    int z = 24 + row * 72;
+
+                    result.add(new Gateway(
+                            x + 16,
+                            FLOOR + 1,
+                            z + 22,
+                            targets[index++]));
+                }
+            }
+
+            return result;
+        }
+
+        List<Gateway> nearbyGates(int x, int z) {
+            if (level == HOMES) {
+                return houseGates();
+            }
+
+            if (level == MINI) {
+                return List.of(new Gateway(
+                        8, FLOOR + 1, 12, HOMES));
+            }
+
+            if (level == EXIT) {
+                return List.of(new Gateway(
+                        48, FLOOR + 1, 64, -1));
+            }
+
+            int cellX = Math.floorDiv(x, CELL);
+            int cellZ = Math.floorDiv(z, CELL);
+
+            List<Gateway> result = new ArrayList<>();
+
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    Gateway gate = regularGate(
+                            cellX + dx, cellZ + dz);
+
+                    if (gate != null) {
+                        result.add(gate);
+                    }
+                }
+            }
+
+            return result;
+        }
+
+        private void drawDoor(
+                ChunkData data,
+                int cx, int cz,
+                int x, int y, int z) {
+
+            for (Bisected.Half half :
+                    Bisected.Half.values()) {
+
+                Door door = (Door) Material.OAK_DOOR
+                        .createBlockData();
+
+                door.setFacing(BlockFace.SOUTH);
+                door.setHalf(half);
+                door.setOpen(false);
+
+                blockData(data, cx, cz,
+                        x,
+                        y + (half == Bisected.Half.TOP ? 1 : 0),
+                        z, door);
+            }
+        }
+
+        private void drawGate(
+                ChunkData data,
+                int cx, int cz,
+                Gateway gate) {
+
+            int x = gate.x;
+            int y = gate.y;
+            int z = gate.z;
+
+            box(data, cx, cz,
+                    x - 2, y - 1, z,
+                    x + 2, y - 1, z + 5,
+                    Material.SMOOTH_STONE);
+
+            box(data, cx, cz,
+                    x - 2, y, z,
+                    x + 2, y + 3, z + 5,
+                    WALLS[level]);
+
+            box(data, cx, cz,
+                    x - 1, y, z + 1,
+                    x + 1, y + 2, z + 4,
+                    Material.AIR);
+
+            box(data, cx, cz,
+                    x - 2, y + 4, z,
+                    x + 2, y + 4, z + 5,
+                    Material.SMOOTH_STONE);
+
+            box(data, cx, cz,
+                    x, y + 3, z + 3,
+                    x, y + 3, z + 3,
+                    Material.SEA_LANTERN);
+
+            box(data, cx, cz,
+                    x, y, z - 1,
+                    x, y + 1, z - 1,
+                    Material.AIR);
+
+            drawDoor(data, cx, cz, x, y, z);
+        }
+
+        private void buildResidential(
+                ChunkData data, int cx, int cz) {
+
+            // Небольшой единый район, а не бесконечные копии.
+            box(data, cx, cz,
+                    0, FLOOR, -8,
+                    191, FLOOR, 175,
+                    Material.GRASS_BLOCK);
+
+            box(data, cx, cz,
+                    3, FLOOR, 0,
+                    10, FLOOR, 167,
+                    Material.STONE_BRICKS);
+
+            for (int row = 0; row < 2; row++) {
+                for (int column = 0; column < 3; column++) {
+                    int x = 16 + column * 56;
+                    int z = 24 + row * 72;
+
+                    RoomRect house = new RoomRect(
+                            x, z, x + 32, z + 34);
+
+                    shell(data, cx, cz, house, 8,
+                            Material.BRICKS,
+                            Material.OAK_PLANKS);
+
+                    // Внешняя дверь.
+                    drawDoor(data, cx, cz,
+                            x + 16, FLOOR + 1, z);
+
+                    // Окна передней стены.
+                    for (int windowX : new int[]{
+                            x + 5, x + 24}) {
+
+                        box(data, cx, cz,
+                                windowX, FLOOR + 2, z,
+                                windowX + 3, FLOOR + 4, z,
+                                Material.GLASS);
+                    }
+
+                    // Перегородка и обычный внутренний проход.
+                    box(data, cx, cz,
+                            x + 1, FLOOR + 1, z + 15,
+                            x + 31, FLOOR + 5, z + 15,
+                            Material.OAK_PLANKS);
+
+                    box(data, cx, cz,
+                            x + 15, FLOOR + 1, z + 15,
+                            x + 17, FLOOR + 3, z + 15,
+                            Material.AIR);
+
+                    // Кухонная зона.
+                    box(data, cx, cz,
+                            x + 2, FLOOR + 1, z + 3,
+                            x + 7, FLOOR + 1, z + 3,
+                            Material.SMOOTH_STONE_SLAB);
+
+                    box(data, cx, cz,
+                            x + 2, FLOOR + 1, z + 5,
+                            x + 2, FLOOR + 1, z + 5,
+                            Material.FURNACE);
+
+                    box(data, cx, cz,
+                            x + 3, FLOOR + 1, z + 27,
+                            x + 3, FLOOR + 1, z + 27,
+                            Material.BARREL);
+
+                    // Стол и диван.
+                    box(data, cx, cz,
+                            x + 23, FLOOR + 1, z + 7,
+                            x + 26, FLOOR + 1, z + 9,
+                            Material.OAK_SLAB);
+
+                    box(data, cx, cz,
+                            x + 23, FLOOR + 1, z + 12,
+                            x + 27, FLOOR + 1, z + 12,
+                            Material.SPRUCE_STAIRS);
+
+                    // Дорожка от улицы к дому.
+                    box(data, cx, cz,
+                            7, FLOOR, z - 5,
+                            x + 17, FLOOR, z - 3,
+                            Material.STONE_BRICKS);
+
+                    box(data, cx, cz,
+                            x + 15, FLOOR, z - 5,
+                            x + 17, FLOOR, z - 1,
+                            Material.STONE_BRICKS);
+                }
+            }
+
+            for (Gateway gate : houseGates()) {
+                drawGate(data, cx, cz, gate);
+            }
+        }
+
+        private void buildMiniature(
+                ChunkData data, int cx, int cz) {
+
+            if (miniature == null) {
+                return;
+            }
+
+            // Миниатюра существует один раз:
+            // X = 16..width+15, Z = 0..depth-1.
+            int minX = Math.max(cx, 16);
+            int maxX = Math.min(
+                    cx + 15, miniature.width + 15);
+            int minZ = Math.max(cz, 0);
+            int maxZ = Math.min(
+                    cz + 15, miniature.depth - 1);
+
+            for (int x = minX; x <= maxX; x++) {
+                for (int z = minZ; z <= maxZ; z++) {
+                    int index = miniature.index(x - 16, z);
+                    int height = miniature.heights[index];
+
+                    int color = Byte.toUnsignedInt(
+                            miniature.colors[index]);
+
+                    Material material =
+                            COLORS[Math.min(
+                                    color, COLORS.length - 1)];
+
+                    box(data, cx, cz,
+                            x, FLOOR + 1, z,
+                            x, FLOOR + 1 + height, z,
+                            material);
+                }
+            }
+
+            // Проход и дверь вне площади миниатюры.
+            box(data, cx, cz,
+                    3, FLOOR, 0,
+                    12, FLOOR, miniature.depth - 1,
+                    Material.SMOOTH_QUARTZ);
+
+            for (int z = 4;
+                 z < miniature.depth; z += 12) {
+                box(data, cx, cz,
+                        3, FLOOR + 1, z,
+                        3, FLOOR + 1, z,
+                        Material.SEA_LANTERN);
+            }
+
+            drawGate(data, cx, cz,
+                    new Gateway(
+                            8, FLOOR + 1, 12, HOMES));
+        }
+
+        private void buildExit(
+                ChunkData data, int cx, int cz) {
+
+            RoomRect room = new RoomRect(
+                    0, 0, 95, 95);
+
+            shell(data, cx, cz, room, 7,
+                    Material.QUARTZ_BLOCK,
+                    Material.SMOOTH_QUARTZ);
+
+            // Одна точка выхода из отдельного мира EXIT.
+            drawGate(data, cx, cz,
+                    new Gateway(
+                            48, FLOOR + 1, 64, -1));
+        }
+
+        boolean onMainRoute(int x, int z) {
+            int localX = Math.floorMod(x, CELL);
+            int localZ = Math.floorMod(z, CELL);
+
+            // Запас по ширине: shiftOne меняет три блока.
+            return localX <= 10 || localZ <= 10;
+        }
+    }
+}
 
