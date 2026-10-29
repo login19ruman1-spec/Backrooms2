@@ -1,20 +1,19 @@
-name: ShiftingBackrooms
-version: 0.1.0
+ name: Backrooms
+version: '0.1.0'
 main: ru.backrooms.BackroomsPlugin
-api-version: '1.21.4'
-depend: [Citizens]
-description: Procedural shifting Backrooms with player echoes.
+api-version: '1.21'
+
+softdepend:
+  - Citizens
 
 commands:
-  br:
-    description: Управление Backrooms
-    usage: /br <enter [0-23]|leave|levels|snapshot>
+  backrooms:
+    description: Управление Закулисьем
+    aliases:
+      - br
+    usage: /br help
 
 permissions:
-  backrooms.use:
-    description: Вход и выход из Backrooms
-    default: true
-
   backrooms.admin:
-    description: Обновление миниатюры исходного мира
+    description: Создание уровней и проверка Backrooms
     default: op
