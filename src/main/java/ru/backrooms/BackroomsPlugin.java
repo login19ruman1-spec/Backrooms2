@@ -2228,7 +2228,7 @@ public final class BackroomsPlugin extends JavaPlugin
         });
     }
 
-       private void finishSnapshot(
+    private void finishSnapshot(
             CommandSender sender, Snapshot building) {
 
         Bukkit.getScheduler().runTaskAsynchronously(this, () -> {
@@ -3389,4 +3389,3 @@ public final class BackroomsPlugin extends JavaPlugin
         }
     }
 }
-
