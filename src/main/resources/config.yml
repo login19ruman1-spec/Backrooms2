@@ -1,22 +1,20 @@
-# Используй отдельное, ранее не занятое обычным миром имя.
-world-name: backrooms_shift
+world-prefix: backrooms_v4
 seed: 778013
+generation-enabled: false
 
-miniature:
-  source-world: world
+clones:
+  enabled: true
+  auto-track-players: true
+  max-npcs: 12
+  spawn-interval-ticks: 300
+  names: []
 
 shifting:
   enabled: true
-  # Интервал между попытками изменить одну загруженную комнату.
-  interval-ticks: 200
-  # Не изменять комнаты рядом с настоящими игроками.
-  safe-distance: 48
+  interval-ticks: 240
 
-echoes:
-  enabled: true
-  max-active: 6
-  spawn-interval-ticks: 600
-  skins: true
-
-# Посетители, снимок миниатюры и точки возвращения
-# добавляются плагином автоматически.
+miniature:
+  source-world: world
+  center-x: 0
+  center-z: 0
+  base-y: 64
